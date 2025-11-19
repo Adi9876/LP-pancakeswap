@@ -44,7 +44,15 @@ export async function provideLiquidity(
       FEE_TIER
     );
     if (!poolInfo) {
-      throw new Error(`No pool found for USDT/${tokenAAddress}`);
+      console.error("[provideLiquidity] No pool found:", {
+        usdtAddress,
+        tokenAAddress,
+        chainId,
+        feeTier: FEE_TIER,
+      });
+      throw new Error(
+        "Trading pair not available. Please try a different token."
+      );
     }
     const fee = poolInfo.fee;
 
@@ -138,6 +146,14 @@ export async function provideLiquidity(
       usdtAmount: ethers.formatUnits(usdtAmount, usdtDecimals),
     };
   } catch (error) {
+    console.error("[provideLiquidity] Error:", {
+      error: error.message,
+      stack: error.stack,
+      steps,
+      investmentAmount,
+      tokenAAddress,
+      chainId,
+    });
     return { success: false, steps, error: error.message };
   }
 }

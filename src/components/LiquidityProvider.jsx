@@ -76,7 +76,18 @@ export default function LiquidityProvider() {
       setStatus('Wallet connected');
       setError(null);
     } catch (err) {
-      setError(err.message);
+      console.error("[connectWallet] Error:", {
+        error: err.message,
+        stack: err.stack,
+        code: err.code
+      });
+      if (err.message && err.message.includes("user rejected")) {
+        setError("Connection cancelled. Please try again.");
+      } else if (err.message && err.message.includes("install")) {
+        setError("Please install MetaMask or another Web3 wallet");
+      } else {
+        setError("Failed to connect wallet. Please try again.");
+      }
       setStatus('');
     }
   };
@@ -99,11 +110,17 @@ export default function LiquidityProvider() {
         setResult(result);
         setStatus('Liquidity provision completed successfully!');
       } else {
-        setError(result.error || 'Transaction failed');
+        console.error("[handleInvest] Transaction failed:", result);
+        setError(result.error || 'Transaction failed. Please try again.');
         setStatus('');
       }
     } catch (err) {
-      setError(err.message || 'Unknown error occurred');
+      console.error("[handleInvest] Error:", {
+        error: err.message,
+        stack: err.stack,
+        code: err.code
+      });
+      setError('Something went wrong. Please try again.');
       setStatus('');
     } finally {
       setLoading(false);
