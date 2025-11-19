@@ -60,8 +60,15 @@ export async function getSwapQuote(tokenIn, tokenOut, amountIn, fee, provider) {
   const poolAddress = await getPoolAddress(tokenIn, tokenOut, fee, provider);
 
   if (poolAddress === ethers.ZeroAddress) {
-    console.error("[getSwapQuote] Pool does not exist");
-    throw new Error(`Pool does not exist for token pair with fee tier ${fee}`);
+    console.error("[getSwapQuote] Pool does not exist", {
+      tokenIn,
+      tokenOut,
+      fee,
+      chainId,
+    });
+    throw new Error(
+      "Trading pair not available. Please try a different token."
+    );
   }
 
   const quoter = new ethers.Contract(
@@ -81,12 +88,18 @@ export async function getSwapQuote(tokenIn, tokenOut, amountIn, fee, provider) {
     const finalResult = Array.isArray(result) ? result[0] : result;
     return finalResult;
   } catch (error) {
-    console.error("[getSwapQuote] Quote call failed:", error);
-    const explorer = chainId === 56 ? "bscscan.com" : "testnet.bscscan.com";
+    console.error("[getSwapQuote] Quote call failed:", {
+      error: error.message,
+      stack: error.stack,
+      tokenIn,
+      tokenOut,
+      amountIn: amountIn.toString(),
+      fee,
+      poolAddress,
+      chainId,
+    });
     throw new Error(
-      `Quote failed. Pool: ${poolAddress}. ` +
-        `Check: https://${explorer}/address/${poolAddress} ` +
-        `Try smaller amount or different token pair.`
+      "Unable to get price quote. Try a smaller amount or different token."
     );
   }
 }
@@ -120,8 +133,27 @@ export async function executeSwap(
     });
     return tx;
   } catch (error) {
-    console.error("[executeSwap] Swap execution failed:", error);
-    throw error;
+    console.error("[executeSwap] Swap execution failed:", {
+      error: error.message,
+      stack: error.stack,
+      code: error.code,
+      data: error.data,
+      tokenIn,
+      tokenOut,
+      amountIn: amountIn.toString(),
+      amountOutMin: amountOutMin.toString(),
+      fee,
+      chainId,
+      routerAddress,
+    });
+
+    if (error.message && error.message.includes("user rejected")) {
+      throw new Error("Transaction cancelled. Please try again.");
+    }
+    if (error.message && error.message.includes("insufficient funds")) {
+      throw new Error("Not enough balance. Please check your wallet.");
+    }
+    throw new Error("Swap failed. Please try again.");
   }
 }
 
@@ -145,28 +177,66 @@ export async function addLiquidity(
   const token1 = tokenA.toLowerCase() < tokenB.toLowerCase() ? tokenB : tokenA;
   const isToken0A = token0.toLowerCase() === tokenA.toLowerCase();
 
-  return await positionManager.mint({
-    token0,
-    token1,
-    fee,
-    tickLower: nearestUsableTick(-887272, tickSpacing),
-    tickUpper: nearestUsableTick(887272, tickSpacing),
-    amount0Desired: (isToken0A ? amountA : amountB).toString(),
-    amount1Desired: (isToken0A ? amountB : amountA).toString(),
-    amount0Min: 0,
-    amount1Min: 0,
-    recipient: await signer.getAddress(),
-    deadline: Math.floor(Date.now() / 1000) + 1200,
-  });
+  try {
+    return await positionManager.mint({
+      token0,
+      token1,
+      fee,
+      tickLower: nearestUsableTick(-887272, tickSpacing),
+      tickUpper: nearestUsableTick(887272, tickSpacing),
+      amount0Desired: (isToken0A ? amountA : amountB).toString(),
+      amount1Desired: (isToken0A ? amountB : amountA).toString(),
+      amount0Min: 0,
+      amount1Min: 0,
+      recipient: await signer.getAddress(),
+      deadline: Math.floor(Date.now() / 1000) + 1200,
+    });
+  } catch (error) {
+    console.error("[addLiquidity] Error:", {
+      error: error.message,
+      stack: error.stack,
+      code: error.code,
+      tokenA,
+      tokenB,
+      amountA: amountA.toString(),
+      amountB: amountB.toString(),
+      fee,
+      chainId,
+    });
+
+    if (error.message && error.message.includes("user rejected")) {
+      throw new Error("Transaction cancelled. Please try again.");
+    }
+    if (error.message && error.message.includes("insufficient funds")) {
+      throw new Error("Not enough balance. Please check your wallet.");
+    }
+    throw new Error("Failed to add liquidity. Please try again.");
+  }
 }
 
 export async function approveToken(tokenAddress, spender, amount, signer) {
-  const token = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
-  const allowance = await token.allowance(await signer.getAddress(), spender);
-  if (allowance < amount) {
-    const tx = await token.approve(spender, amount);
-    await tx.wait();
-    return tx;
+  try {
+    const token = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
+    const allowance = await token.allowance(await signer.getAddress(), spender);
+    if (allowance < amount) {
+      const tx = await token.approve(spender, amount);
+      await tx.wait();
+      return tx;
+    }
+  } catch (error) {
+    console.error("[approveToken] Error:", {
+      error: error.message,
+      stack: error.stack,
+      code: error.code,
+      tokenAddress,
+      spender,
+      amount: amount.toString(),
+    });
+
+    if (error.message && error.message.includes("user rejected")) {
+      throw new Error("Transaction cancelled. Please try again.");
+    }
+    throw new Error("Failed to approve token. Please try again.");
   }
 }
 
@@ -179,31 +249,14 @@ export async function getTokenDecimals(tokenAddress, provider) {
     const tokens = getTokens(chainId);
     const tokenLower = tokenAddress.toLowerCase();
 
-    let suggestion = "";
-    if (
-      chainId === 56 &&
-      tokenLower === "0xfa60d973f7642b748046464e165a65b7323b0dee"
-    ) {
-      suggestion = ` Use mainnet CAKE: ${tokens.CAKE}`;
-    } else if (
-      chainId === 97 &&
-      tokenLower === "0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82"
-    ) {
-      suggestion = ` Use testnet CAKE: ${tokens.CAKE}`;
-    } else if (
-      chainId === 56 &&
-      tokenLower === "0x337610d27c682e347c9cd60bd4b3b107c9d34ddd"
-    ) {
-      suggestion = ` Use mainnet USDT: ${tokens.USDT}`;
-    } else if (
-      chainId === 97 &&
-      tokenLower === "0x55d398326f99059ff775485246999027b3197955"
-    ) {
-      suggestion = ` Use testnet USDT: ${tokens.USDT}`;
-    }
+    console.error("[getTokenDecimals] Token not found:", {
+      error: error.message,
+      stack: error.stack,
+      tokenAddress,
+      chainId,
+      tokenLower,
+    });
 
-    throw new Error(
-      `Token ${tokenAddress} not found on chainId ${chainId}.${suggestion}`
-    );
+    throw new Error("Invalid token address. Please check and try again.");
   }
 }
