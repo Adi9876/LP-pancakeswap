@@ -4,8 +4,8 @@
   "description": "Simple PancakeSwap V3 Liquidity Provision UI",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "dev": "node api.js && vite",
+    "build": "node api.js && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
