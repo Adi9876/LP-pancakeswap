@@ -64,20 +64,6 @@ export async function getSwapQuote(tokenIn, tokenOut, amountIn, fee, provider) {
     throw new Error(`Pool does not exist for token pair with fee tier ${fee}`);
   }
 
-  try {
-    const pool = new ethers.Contract(poolAddress, POOL_ABI, provider);
-    const liquidity = await pool.liquidity().catch(() => 0n);
-    if (liquidity === 0n) {
-      const explorer = chainId === 56 ? "bscscan.com" : "testnet.bscscan.com";
-      console.error("[getSwapQuote] Pool has no liquidity");
-      throw new Error(
-        `Pool has no liquidity. Check: https://${explorer}/address/${poolAddress}`
-      );
-    }
-  } catch (error) {
-    if (error.message.includes("no liquidity")) throw error;
-  }
-
   const quoter = new ethers.Contract(
     getContracts(chainId).QUOTER,
     QUOTER_ABI,
