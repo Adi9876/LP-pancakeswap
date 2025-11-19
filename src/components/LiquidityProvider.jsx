@@ -20,12 +20,56 @@ export default function LiquidityProvider() {
         throw new Error('Please install MetaMask or another Web3 wallet');
       }
 
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      await provider.send('eth_requestAccounts', []);
-      const signer = await provider.getSigner();
-      const network = await provider.getNetwork();
+      // Get Alchemy RPC URL from environment variable
+      const alchemyRpcUrl = import.meta.env.VITE_ALCHEMY_RPC_URL;
 
-      setProvider(provider);
+      // Still use MetaMask for signing
+      const browserProvider = new ethers.BrowserProvider(window.ethereum);
+      await browserProvider.send('eth_requestAccounts', []);
+      const metaMaskSigner = await browserProvider.getSigner();
+
+      // Use Alchemy RPC for read operations to avoid rate limiting
+      let rpcProvider;
+      if (alchemyRpcUrl) {
+        rpcProvider = new ethers.JsonRpcProvider(alchemyRpcUrl);
+      } else {
+        rpcProvider = browserProvider;
+      }
+
+      const network = await rpcProvider.getNetwork();
+
+
+      class CustomSigner {
+        constructor(metaMaskSigner, rpcProvider) {
+          this._metaMaskSigner = metaMaskSigner;
+          this.provider = rpcProvider;
+        }
+
+        async getAddress() {
+          return await this._metaMaskSigner.getAddress();
+        }
+
+        async sendTransaction(tx) {
+          // Use MetaMask's signer for actual transaction sending
+          return await this._metaMaskSigner.sendTransaction(tx);
+        }
+
+        signMessage(message) {
+          return this._metaMaskSigner.signMessage(message);
+        }
+
+        signTransaction(tx) {
+          return this._metaMaskSigner.signTransaction(tx);
+        }
+
+        connect(provider) {
+          return new CustomSigner(this._metaMaskSigner, provider);
+        }
+      }
+
+      const signer = new CustomSigner(metaMaskSigner, rpcProvider);
+
+      setProvider(rpcProvider);
       setSigner(signer);
       setChainId(Number(network.chainId));
 
